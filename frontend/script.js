@@ -10,194 +10,186 @@ const baseSatelite = L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/se
   attribution: "© Esri & NASA",
 });
 
-// === 3. Carregar GeoJSONs ===
-const estados = fetch("../data/processed/estados_brasil.geojson").then(res => res.json());
-const municipios = fetch("../data/processed/municipios_sp.geojson").then(res => res.json());
-const biomas = fetch("../data/processed/biomas_brasil.geojson").then(res => res.json());
+// === 3. Camadas WMS do GeoServer ===
+const geoserverURL = "http://localhost:8080/geoserver";
 
-Promise.all([estados, municipios, biomas]).then(([estadosData, municipiosData, biomasData]) => {
+const layerRasterMapBiomas = L.tileLayer.wms(`${geoserverURL}/proj_Muni_v0/wms`, {
+  layers: "proj_Muni_v0:brasil_coverage_2023",
+  format: "image/png",
+  transparent: true,
+  tiled: true,
+  attribution: "MapBiomas 2023"
+});
+
+const layerVetorFishnet = L.tileLayer.wms(`${geoserverURL}/proj_Muni_v0/wms`, {
+  layers: "proj_Muni_v0:Fishnet_Climatica_Taxa_desmatamento",
+  format: "image/png",
+  transparent: true,
+  tiled: true,
+  attribution: "Fishnet"
+});
+
+// === 4. Camadas locais GeoJSON ===
+async function carregarGeojsons() {
+  const [estadosData, municipiosData, biomasData] = await Promise.all([
+    fetch("../data/processed/estados_brasil.geojson").then(res => res.json()),
+    fetch("../data/processed/municipios_sp.geojson").then(res => res.json()),
+    fetch("../data/processed/biomas_brasil.geojson").then(res => res.json())
+  ]);
+
   const estadoSelect = document.getElementById("estadoSelect");
   const biomaSelect = document.getElementById("biomaSelect");
   const muniSelect = document.getElementById("muniSelect");
 
-  // === Camada de estados com popup + gráfico
   const layerEstados = L.geoJSON(estadosData, {
     onEachFeature: (feature, layer) => {
       const props = feature.properties;
-      const html = `
+      layer.bindPopup(`
         <strong>${props.name_state}</strong><br>
         UF: ${props.abbrev_state}<br>
-        Região: ${props.name_region}<br>
-        Código Estado: ${props.code_state}<br>
+        Código: ${props.code_state}<br>
         <canvas id="grafico-${props.code_state}" width="200" height="100"></canvas>
-      `;
-      layer.bindPopup(html);
-
+      `);
       layer.on("popupopen", () => {
         const ctx = document.getElementById(`grafico-${props.code_state}`);
-        if (ctx) {
-          new Chart(ctx, {
-            type: "doughnut",
-            data: {
-              labels: ["População", "Infraestrutura", "Ambiental"],
-              datasets: [{
-                label: "Indicadores",
-                data: [
-                  Math.floor(Math.random() * 100),
-                  Math.floor(Math.random() * 100),
-                  Math.floor(Math.random() * 100)
-                ],
-                backgroundColor: ["#007bff", "#28a745", "#ffc107"]
-              }]
-            },
-            options: {
-              responsive: false,
-              plugins: { legend: { display: true } }
-            }
-          });
-        }
+        new Chart(ctx, {
+          type: "doughnut",
+          data: {
+            labels: ["População", "Infraestrutura", "Ambiental"],
+            datasets: [{
+              data: [Math.random()*100, Math.random()*100, Math.random()*100],
+              backgroundColor: ["#007bff", "#28a745", "#ffc107"]
+            }]
+          },
+          options: { responsive: false }
+        });
       });
     },
     style: { color: "#333", weight: 1 }
   }).addTo(map);
 
-  map.fitBounds(layerEstados.getBounds());
-
-  // === Camada de biomas com estilo temático
-  function estiloBioma(feature) {
-    const cores = {
-      "Amazônia": "#228B22",
-      "Cerrado": "#DAA520",
-      "Caatinga": "#C8705F",
-      "Pampa": "#66CDAA",
-      "Pantanal": "#5F9EA0",
-      "Mata Atlântica": "#4682B4"
-    };
-    return {
-      color: cores[feature.properties.name_biome] || "#999",
-      weight: 1,
-      fillOpacity: 0.4
-    };
-  }
+  const coresBiomas = {
+    "Amazônia": "#228B22", "Cerrado": "#DAA520", "Caatinga": "#C8705F",
+    "Pampa": "#66CDAA", "Pantanal": "#5F9EA0", "Mata Atlântica": "#4682B4"
+  };
 
   const layerBiomas = L.geoJSON(biomasData, {
-    onEachFeature: (feature, layer) => {
-      layer.bindPopup(`<strong>${feature.properties.name_biome}</strong>`);
-    },
-    style: estiloBioma
+    style: f => ({ color: coresBiomas[f.properties.name_biome] || "#999", weight: 1, fillOpacity: 0.4 }),
+    onEachFeature: (f, l) => l.bindPopup(`<strong>${f.properties.name_biome}</strong>`)
   }).addTo(map);
 
-  // === Camada de municípios SP
   const layerMunicipios = L.geoJSON(null, {
-    onEachFeature: (feature, layer) => {
-      layer.bindPopup(`<strong>${feature.properties.name_muni}</strong><br>Código: ${feature.properties.code_muni}`);
-    },
+    onEachFeature: (f, l) => l.bindPopup(`<strong>${f.properties.name_muni}</strong>`),
     style: { color: "#0066cc", weight: 1 }
   }).addTo(map);
 
-  // === Preencher select de estados
-  estadosData.features.forEach((f) => {
-    const option = document.createElement("option");
-    option.value = f.properties.name_state;
-    option.textContent = f.properties.name_state;
-    estadoSelect.appendChild(option);
+  estadosData.features.forEach(f => {
+    const opt = document.createElement("option");
+    opt.value = f.properties.name_state;
+    opt.textContent = f.properties.name_state;
+    estadoSelect.appendChild(opt);
   });
 
-  // === Preencher select de biomas
-  const nomesBiomas = [...new Set(biomasData.features.map(f => f.properties.name_biome))];
-  nomesBiomas.forEach(nome => {
-    const option = document.createElement("option");
-    option.value = nome;
-    option.textContent = nome;
-    biomaSelect.appendChild(option);
+  [...new Set(biomasData.features.map(f => f.properties.name_biome))].forEach(nome => {
+    const opt = document.createElement("option");
+    opt.value = nome;
+    opt.textContent = nome;
+    biomaSelect.appendChild(opt);
   });
 
-  // === Filtro por estado
-  estadoSelect.addEventListener("change", (e) => {
-    const nomeSelecionado = e.target.value;
-    muniSelect.innerHTML = '<option value="">-- Selecione um município --</option>';
+  estadoSelect.addEventListener("change", e => {
+    const estado = e.target.value;
     layerEstados.clearLayers();
     layerMunicipios.clearLayers();
+    muniSelect.innerHTML = "<option value=''>-- Selecione --</option>";
 
-    if (nomeSelecionado === "") {
+    if (estado === "") {
       layerEstados.addData(estadosData);
-      map.fitBounds(layerEstados.getBounds());
     } else {
-      const estadoFiltrado = {
-        ...estadosData,
-        features: estadosData.features.filter(f => f.properties.name_state === nomeSelecionado)
-      };
-      layerEstados.addData(estadoFiltrado);
-      map.fitBounds(layerEstados.getBounds());
+      const estadoFiltrado = estadosData.features.find(f => f.properties.name_state === estado);
+      const estadoCode = estadoFiltrado.properties.code_state;
+      const bounds = L.geoJSON(estadoFiltrado).getBounds();
+      const bbox = `${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()}`;
 
-      // === Atualizar municípios
-      const codeUF = estadoFiltrado.features[0].properties.code_state;
-      const municipiosFiltrados = municipiosData.features.filter(
-        f => parseInt(f.properties.code_state) === parseInt(codeUF)
-      );
+      layerEstados.addData({ ...estadosData, features: [estadoFiltrado] });
 
-      municipiosFiltrados.forEach((f) => {
+      const municipiosFiltrados = municipiosData.features.filter(f => f.properties.code_state == estadoCode);
+      layerMunicipios.addData({ ...municipiosData, features: municipiosFiltrados });
+
+      municipiosFiltrados.forEach(f => {
         const opt = document.createElement("option");
         opt.value = f.properties.name_muni;
         opt.textContent = f.properties.name_muni;
         muniSelect.appendChild(opt);
       });
 
-      layerMunicipios.addData({
-        ...municipiosData,
-        features: municipiosFiltrados
+      layerRasterMapBiomas.setParams({ BBOX: bbox });
+      layerVetorFishnet.setParams({
+        CQL_FILTER: `INTERSECTS(the_geom, POLYGON((${bounds.getWest()} ${bounds.getSouth()}, ${bounds.getEast()} ${bounds.getSouth()}, ${bounds.getEast()} ${bounds.getNorth()}, ${bounds.getWest()} ${bounds.getNorth()}, ${bounds.getWest()} ${bounds.getSouth()})))`
       });
     }
   });
 
-  // === Filtro por município
-  muniSelect.addEventListener("change", (e) => {
+  muniSelect.addEventListener("change", e => {
     const nomeMuni = e.target.value;
     const nomeEstado = estadoSelect.value;
     layerMunicipios.clearLayers();
-
     if (nomeMuni === "") {
-      const codeUF = estadosData.features.find(f => f.properties.name_state === nomeEstado)?.properties.code_state;
-      const municipiosFiltrados = municipiosData.features.filter(m => m.properties.code_state === codeUF);
-      layerMunicipios.addData({ ...municipiosData, features: municipiosFiltrados });
+      estadoSelect.dispatchEvent(new Event("change"));
     } else {
-      const municipioFiltrado = municipiosData.features.filter(f => f.properties.name_muni === nomeMuni);
-      layerMunicipios.addData({ ...municipiosData, features: municipioFiltrado });
-      map.fitBounds(L.geoJSON(municipioFiltrado).getBounds());
+      const muniFiltrado = municipiosData.features.filter(f => f.properties.name_muni === nomeMuni);
+      layerMunicipios.addData({ ...municipiosData, features: muniFiltrado });
+      map.fitBounds(L.geoJSON(muniFiltrado).getBounds());
     }
   });
 
-  // === Filtro por bioma
-  biomaSelect.addEventListener("change", (e) => {
-    const nomeSelecionado = e.target.value;
+  biomaSelect.addEventListener("change", e => {
+    const nome = e.target.value;
     layerBiomas.clearLayers();
-
-    if (nomeSelecionado === "") {
+    if (nome === "") {
       layerBiomas.addData(biomasData);
-      map.fitBounds(layerBiomas.getBounds());
     } else {
-      const biomaFiltrado = {
-        ...biomasData,
-        features: biomasData.features.filter(
-          f => f.properties.name_biome === nomeSelecionado
-        )
-      };
-      layerBiomas.addData(biomaFiltrado);
-      map.fitBounds(layerBiomas.getBounds());
+      const filtrado = biomasData.features.filter(f => f.properties.name_biome === nome);
+      layerBiomas.addData({ ...biomasData, features: filtrado });
+      map.fitBounds(L.geoJSON(filtrado).getBounds());
     }
   });
 
-  // === Controle de camadas
-  const baseMaps = {
-    "Ruas": baseRua,
-    "Satélite": baseSatelite
-  };
+  const drawnItems = new L.FeatureGroup().addTo(map);
+  const drawControl = new L.Control.Draw({
+    draw: { polygon: true, rectangle: true, circle: false, marker: false, polyline: false },
+    edit: { featureGroup: drawnItems }
+  });
+  map.addControl(drawControl);
 
+  map.on(L.Draw.Event.CREATED, e => {
+    drawnItems.clearLayers();
+    const layer = e.layer;
+    drawnItems.addLayer(layer);
+
+    const bounds = layer.getBounds();
+    const bbox = `${bounds.getSouth()},${bounds.getWest()},${bounds.getNorth()},${bounds.getEast()}`;
+    layerRasterMapBiomas.setParams({ BBOX: bbox });
+    layerVetorFishnet.setParams({
+      CQL_FILTER: `INTERSECTS(the_geom, POLYGON((${bounds.getWest()} ${bounds.getSouth()}, ${bounds.getEast()} ${bounds.getSouth()}, ${bounds.getEast()} ${bounds.getNorth()}, ${bounds.getWest()} ${bounds.getNorth()}, ${bounds.getWest()} ${bounds.getSouth()})))`
+    });
+  });
+
+  const baseMaps = { "Ruas": baseRua, "Satélite": baseSatelite };
   const overlayMaps = {
     "Estados": layerEstados,
     "Biomas": layerBiomas,
-    "Municípios SP": layerMunicipios
+    "Municípios SP": layerMunicipios,
+    "Máscara Desenhada": drawnItems,
+    "Raster MapBiomas": layerRasterMapBiomas,
+    "Fishnet Desmatamento": layerVetorFishnet
   };
-
   L.control.layers(baseMaps, overlayMaps).addTo(map);
-});
+
+  layerRasterMapBiomas.addTo(map);
+  layerVetorFishnet.addTo(map);
+
+  map.fitBounds(layerEstados.getBounds());
+}
+
+carregarGeojsons();

@@ -1,37 +1,137 @@
 <!DOCTYPE html>
-<html lang="pt-br">
+<html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>WebGIS MapBiomas + GeoServer</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet/dist/leaflet.css" />
-  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
-  <link rel="stylesheet" href="style.css" />
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WebGIS Brasil - Análise de Desmatamento</title>
+    
+    <!-- Leaflet CSS -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <!-- Leaflet Draw CSS -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.css" />
+    
+    <!-- Font Awesome -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- CSS Customizado -->
+    <link rel="stylesheet" href="css/style.css">
+
+    <!-- dentro do <head> ou logo antes dos seus módulos -->
+    <script src="https://unpkg.com/@turf/turf@6/turf.min.js"></script>
+
 </head>
 <body>
-  <div id="menu">
-    <h2>Filtros</h2>
-    <label for="estadoSelect">Estado:</label>
-    <select id="estadoSelect">
-      <option value="">-- Selecione --</option>
-    </select>
+    <div class="app-container">
+        <!-- Painel de Controle Lateral -->
+        <aside class="control-panel" id="controlPanel">
+            <div class="panel-header">
+                <h2><i class="fas fa-map-marked-alt"></i> Controles do Mapa</h2>
+                <button id="togglePanel" class="toggle-btn">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+            </div>
+            
+            <!-- Seção de Filtros -->
+            <div class="control-section">
+                <h3><i class="fas fa-filter"></i> Filtros Geográficos</h3>
+                <div class="control-group">
+                    <label for="estadoSelect"><i class="fas fa-map"></i> Estado:</label>
+                    <select id="estadoSelect" class="form-control">
+                        <option value="">-- Todos Estados --</option>
+                        <!-- Preenchido dinamicamente -->
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label for="muniSelect"><i class="fas fa-city"></i> Município:</label>
+                    <select id="muniSelect" class="form-control" disabled>
+                        <option value="">-- Selecione um Estado --</option>
+                    </select>
+                </div>
+                
+                <div class="control-group">
+                    <label for="biomaSelect"><i class="fas fa-tree"></i> Bioma:</label>
+                    <select id="biomaSelect" class="form-control">
+                        <option value="">-- Todos Biomas --</option>
+                        <!-- Preenchido dinamicamente -->
+                    </select>
+                </div>
+                
+                <div class="action-buttons">
+                    <button id="applyFilter" class="btn btn-primary">
+                        <i class="fas fa-check"></i> Aplicar
+                    </button>
+                    <button id="clearFilter" class="btn btn-secondary">
+                        <i class="fas fa-broom"></i> Limpar
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Seção de Camadas -->
+            <div class="control-section">
+                <h3><i class="fas fa-layer-group"></i> Camadas</h3>
+                <div class="layer-controls" id="layerControls">
+                    <!-- Preenchido dinamicamente -->
+                </div>
+            </div>
+            
+            <!-- Seção de Legenda -->
+            <div class="control-section">
+                <h3><i class="fas fa-palette"></i> Legenda</h3>
+                <div id="legendContent" class="legend-container">
+                    <!-- Preenchido dinamicamente -->
+                </div>
+            </div>
+            
+            <!-- Status do Sistema -->
+            <div class="control-section system-status">
+                <h3><i class="fas fa-info-circle"></i> Status</h3>
+                <div id="systemStatus">
+                    <p><span class="status-indicator active"></span> Mapa Carregado</p>
+                    <p id="featureCount">0 feições selecionadas</p>
+                </div>
+            </div>
+        </aside>
+        
+        <!-- Área Principal do Mapa -->
+        <main class="map-container">
+            <div id="map"></div>
+            
+            <!-- Overlay de Carregamento -->
+            <div id="loadingIndicator" class="loading-indicator">
+                <div class="spinner"></div>
+                <span>Processando dados...</span>
+            </div>
+            
+            <!-- Barra de Ferramentas do Mapa -->
+            <div class="map-toolbar">
+                <button id="drawPolygon" class="tool-btn" title="Desenhar Polígono">
+                    <i class="fas fa-draw-polygon"></i>
+                </button>
+                <button id="drawRectangle" class="tool-btn" title="Desenhar Retângulo">
+                    <i class="fas fa-vector-square"></i>
+                </button>
+                <button id="clearDrawing" class="tool-btn" title="Limpar Desenho">
+                    <i class="fas fa-eraser"></i>
+                </button>
+                <button id="zoomToBrazil" class="tool-btn" title="Zoom para Brasil">
+                    <i class="fas fa-globe-americas"></i>
+                </button>
+            </div>
+            
+            <!-- Status do Filtro -->
+            <div id="mapStatus" class="map-status"></div>
+        </main>
+    </div>
 
-    <label for="muniSelect">Município:</label>
-    <select id="muniSelect">
-      <option value="">-- Selecione --</option>
-    </select>
-
-    <label for="biomaSelect">Bioma:</label>
-    <select id="biomaSelect">
-      <option value="">-- Selecione --</option>
-    </select>
-  </div>
-
-  <div id="map"></div>
-
-  <script src="https://unpkg.com/leaflet/dist/leaflet.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <script src="script.js"></script>
+    <!-- Leaflet JS -->
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
+    <!-- Leaflet Draw JS -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet.draw/1.0.4/leaflet.draw.js"></script>
+    
+    <!-- Módulos JavaScript -->
+    <script type="module" src="js/app.js"></script>
 </body>
 </html>
